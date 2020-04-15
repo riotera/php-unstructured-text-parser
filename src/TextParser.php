@@ -43,18 +43,28 @@ class TextParser
         $text = $this->prepareText($text);
         $matchedTemplates = $this->getTemplates($text, $findMatchingTemplate);
 
+        $allExtractedData = [];
+
         foreach ($matchedTemplates as $templatePath => $templateContent) {
-            $this->logger->debug(sprintf('Parsing against template: %s', $templatePath));
+            foreach ($templateContent as $pattern) {
+                $this->logger->debug(sprintf('Parsing against template: %s', $templatePath));
 
-            $templatePattern = $this->prepareTemplate($templateContent);
-            $extractedData = $this->extractData($text, $templatePattern);
+                $templatePattern = $this->prepareTemplate($pattern);
 
-            if ($extractedData) {
-                $this->logger->info(sprintf('Data extracted: %s', json_encode($extractedData)));
+                $extractedData = $this->extractData($text, $templatePattern);
 
-                return $extractedData;
+                if ($extractedData) {
+                    $this->logger->info(sprintf('Data extracted: %s', json_encode($extractedData)));
+
+                    $allExtractedData += $extractedData;
+                }
             }
         }
+
+        if ($allExtractedData) {
+            return $allExtractedData;
+        }
+
 
         return null;
     }
@@ -79,6 +89,7 @@ class TextParser
             }
 
             $templates[$fileInfo->getPathname()] = file_get_contents($fileInfo->getPathname());
+            $templates[$fileInfo->getPathname()] = explode('--separator--', $templates[$fileInfo->getPathname()]);
         }
 
         return $templates;
@@ -109,8 +120,8 @@ class TextParser
      */
     protected function prepareText($txt)
     {
-        //Remove all multiple whitespaces and replace it with single space
-        $txt = preg_replace('/\s+/', ' ', $txt);
+        // Convert \r\n to \n
+        $txt = preg_replace('/\r\n/m', "\n", $txt);
 
         return trim($txt);
     }
@@ -126,12 +137,12 @@ class TextParser
     {
         $patterns = [
             '/\\\{%(.*)%\\\}/U', // 1 Replace all {%Var%}...
-            '/\s+/',             // 2 Replace all white-spaces...
+            '/\r\n/m'            // 2 Replace \r\n
         ];
 
         $replacements = [
             '(?<$1>.*)',         // 1 ...with (?<Var>.*)
-            ' ',                 // 2 ...with a single space
+            "\n"                 // 2 ...with \n
         ];
 
         $templateTxt = preg_replace($patterns, $replacements, preg_quote($templateTxt, '/'));
@@ -150,7 +161,7 @@ class TextParser
     protected function extractData($text, $template)
     {
         //Extract the text based on the provided template using REGEX
-        preg_match('/' . $template . '/s', $text, $matches);
+        preg_match('/' . $template . '/', $text, $matches);
 
         //Extract only the named parameters from the matched regex array
         $keys = array_filter(array_keys($matches), 'is_string');
